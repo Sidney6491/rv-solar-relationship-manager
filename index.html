@@ -216,7 +216,13 @@
   const SEND_ENDPOINT=""; // set to your Gmail-send endpoint to enable one-click/auto send
 
   const SEED=[{first_name:"Bluetti",last_name:"(affiliate mgr)",email:"snowning@bluetti.com",birthday:"",
-    notes:"Bluetti affiliate manager. Impact account attached & approved 2026-07-27 (partner RV Solar Hub, account ID 7505845). Contact for B1210 / AC180 link issues."}];
+    notes:"Bluetti affiliate manager. Impact account attached & approved 2026-07-27 (partner RV Solar Hub, account ID 7505845). Contact for B1210 / AC180 link issues."},
+    {first_name:"EcoFlow",last_name:"(affiliate team)",email:"affiliate@ecoflow.com",birthday:"",
+    notes:"EcoFlow affiliate team. Applied via Impact 2026-07-27 (partner RV Solar Hub, ID 7505845); follow-up email drafted 2026-07-28. Program runs on Awin/direct — separate from Impact. Monetizes Article 7: Delta 2 + River 2 Pro."},
+    {first_name:"Jackery",last_name:"(marketing/affiliate)",email:"marketing@jackery.com",birthday:"",
+    notes:"Jackery affiliate contact (fallback hello@jackery.com). Applied via Impact 2026-07-27 (ID 7505845); follow-up drafted 2026-07-28. Runs on Impact — may attach to existing account. Monetizes Article 7: Explorer 1000 v2."},
+    {first_name:"Renogy",last_name:"(via Impact)",email:"",birthday:"",
+    notes:"Primary affiliate program via Impact (partner 7505845). 6% base, drops to 3% on Sep 30 2026; 9% only on RV solar KITS (RKIT-RV-200ASR / 400ASR) with code RNG6GF. Vanity domain renogy.sjv.io. No individual rep — managed in the Impact dashboard."}];
 
   function loadSchema(){const r=localStorage.getItem(SCHEMA_KEY);if(r){try{return JSON.parse(r);}catch(e){}}return DEFAULT_COLS.slice();}
   function loadData(){const r=localStorage.getItem(DATA_KEY);if(r){try{return JSON.parse(r);}catch(e){}}return SEED.slice();}
