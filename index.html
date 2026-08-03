@@ -251,7 +251,11 @@
     const raw=buildRawEmail({to,subject,body,attachments});
     console.log("---- RFC 2822 message (app email standard) ----\r\n"+raw);
     if(SEND_ENDPOINT){return fetch(SEND_ENDPOINT,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({raw:b64url(raw)})}).then(r=>alert(r.ok?"Sent to "+to:"Send failed ("+r.status+")")).catch(()=>alert("Send failed — endpoint unreachable."));}
-    window.location.href="mailto:"+encodeURIComponent(to)+"?subject="+encodeURIComponent(subject)+"&body="+encodeURIComponent(body);
+    // No send endpoint set → open a pre-filled Gmail compose window in a new tab (one click = ready-to-send draft).
+    // Note: a Gmail compose URL can't carry attachments; those only ride along once SEND_ENDPOINT is wired up.
+    const gmail="https://mail.google.com/mail/?view=cm&fs=1&tf=1&to="+encodeURIComponent(to)+"&su="+encodeURIComponent(subject)+"&body="+encodeURIComponent(body);
+    const w=window.open(gmail,"_blank","noopener");
+    if(!w)alert("Your browser blocked the pop-up. Allow pop-ups for this page, then click “Send reminder” again — it opens a ready-to-send Gmail draft.");
   }
   function myEmail(){let e=localStorage.getItem(EMAIL_KEY);if(!e){e="dancastle78@gmail.com";localStorage.setItem(EMAIL_KEY,e);}return e;}
   function setMyEmail(){const e=prompt("Send reminders to which inbox?",myEmail());if(e&&e.trim()){localStorage.setItem(EMAIL_KEY,e.trim());alert("Reminders will go to "+e.trim());}}
