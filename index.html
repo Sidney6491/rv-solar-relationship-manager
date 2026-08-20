@@ -473,8 +473,24 @@
     return t.replace(/[.!?]+$/,"");
   }
 
+  // Words that mean someone typed a status heading, not a sentence fragment.
+  // "Waiting on confirmation" can't follow "hasn't come back to you about…".
+  const LOOP_HEADINGS=/^(waiting|awaiting|pending|need|needs|needed|sent|asked|ask|follow|followup|checking|check|confirm|confirmation|reply|replied|response|responded|tbd|open|outstanding|status|update|updates|question|questions|info|information|none|n\/a)\b/i;
+
+  // The fragment, but only when it will actually read as one. Better to say
+  // less than to say it wrong — these go to real people on the first click.
+  function loopUsable(r){
+    const t=loopPhrase(r);
+    if(!t)return "";
+    const first=(t.split(/\s+/)[0]||"");
+    if(/^[a-z]/.test(t))return t;          // lowercase — exactly what the hint asks for
+    if(LOOP_HEADINGS.test(first))return ""; // reads like a status label
+    if(/ing$/i.test(first))return "";       // "Waiting…", "Getting…", "Sorting…"
+    return t;                               // a proper noun is fine: "Renogy's kit rate"
+  }
+
   function itemsFor(r,i){
-    const out=[], name=displayName(r), first=firstName(r), loop=loopPhrase(r);
+    const out=[], name=displayName(r), first=firstName(r), loop=loopUsable(r);
     const fu=daysUntil(r.follow_up_on);
     const since=daysSince(r.last_contacted);
 
@@ -525,7 +541,9 @@
     }
 
     // 3. drift — no task, just time. Suppressed while a follow-up is already scheduled.
-    if(since!==null&&(fu===null||fu<0)){
+    // A scheduled follow-up owns this person — overdue included. Otherwise an
+    // overdue follow-up ALSO raises a drift card and one person fills two slots.
+    if(since!==null&&(fu===null||!r.follow_up_on)){
       const limit=nudgeFor(r);
       if(since>=limit){
         // generic wording, their name dropped in — no pronouns, so it reads right for anybody
@@ -1063,7 +1081,7 @@
   function signOff(r){return isPersonal(r)?"Dan":"Dan\r\nRV Solar Hub";}
 
   function draftFor(r,it){
-    const first=firstName(r), loop=loopPhrase(r);
+    const first=firstName(r), loop=loopUsable(r);
     const since=daysSince(r.last_contacted);
     const kind=it?it.kind:"";
     let subject, body;
@@ -1090,9 +1108,11 @@
 
     }else if(kind==="followup"){
       subject=loop?("Following up on "+loop):"Following up";
+      // only mention how long it's been once it's actually been a while —
+      // "I asked yesterday" reads impatient to an affiliate manager
+      const waited=(since!==null&&since>=7)?("I asked "+agoWords(since)+", so I"):"I";
       body="Hi "+first+",\r\n\r\nCircling back on "+(loop||"the last thing we spoke about")+". "+
-           (since!==null?("I asked "+agoWords(since)+", so I"):"I")+
-           " wanted to see where it stands.\r\n\r\n"+
+           waited+" wanted to see where it stands.\r\n\r\n"+
            "No rush if it's still moving — just let me know either way.\r\n\r\n"+signOff(r);
 
     }else if(kind==="drift"&&isPersonal(r)){
