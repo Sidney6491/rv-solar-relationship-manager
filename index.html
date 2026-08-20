@@ -220,6 +220,7 @@
       </div>
     </div>
     <button class="btn ghost" onclick="openSettings()">Settings</button>
+    <button class="btn ghost" onclick="openPaste()">Paste an email</button>
     <button class="btn primary" onclick="openEdit(null)">+ Add contact</button>
   </header>
 
@@ -273,6 +274,15 @@
 </div></div>
 
 <!-- quick to-do -->
+<div class="overlay" id="ovPaste"><div class="modal">
+  <div class="mtitle" id="pTitle">Paste an email</div>
+  <div class="mbody" id="pBody"></div>
+  <div class="mfoot"><div class="right">
+    <button class="btn" onclick="closePaste()">Cancel</button>
+    <button class="btn primary" id="pGo">Read it</button>
+  </div></div>
+</div></div>
+
 <div class="overlay" id="ovLoop"><div class="modal">
   <div class="mtitle" id="lTitle">Something to do</div>
   <div class="mbody" id="lBody"></div>
@@ -883,7 +893,7 @@
       let inp, hint="";
       if(c==="notes"||c==="open_loop"){
         inp=document.createElement("textarea");
-        if(c==="open_loop"){inp.placeholder="the 9% kit rate";inp.style.minHeight="52px";
+        if(c==="open_loop"){inp.placeholder="e.g. the 9% kit rate — this box is empty";inp.style.minHeight="52px";
           hint="Write it so it finishes the sentence “… hasn’t come back to you about…”";}
       }else if(c==="bucket"){
         inp=document.createElement("select");
@@ -908,9 +918,9 @@
         inp.placeholder="Street, town, postal code";
         hint="Here so it's in front of you when the app says a card needs sending.";
       }else if(c==="phone"){
-        inp=document.createElement("input");inp.type="tel";inp.placeholder="306-555-0142";
+        inp=document.createElement("input");inp.type="tel";inp.placeholder="e.g. 306-555-0142";
       }else if(c==="anniversary_label"){
-        inp=document.createElement("input");inp.type="text";inp.placeholder="program anniversary";
+        inp=document.createElement("input");inp.type="text";inp.placeholder="e.g. program anniversary";
         hint="Reads as “Renogy’s program anniversary is in 12 days.” Leave blank and it just says “anniversary”.";
       }else if(c==="last_contacted"||c==="follow_up_on"||c==="birthday"||c==="anniversary"){
         inp=document.createElement("input");inp.type="date";
@@ -1043,6 +1053,197 @@
   document.addEventListener("keydown",e=>{
     if(e.key==="Escape")["ovDetail","ovEdit","ovLoop","ovSet"].forEach(id=>document.getElementById(id).classList.remove("open"));
   });
+
+  /* ==========================================================================
+     PASTE AN EMAIL — the inbound half.
+     Pulls out what it can prove. Anything it isn't sure of stays blank,
+     because a wrong phone number sits there looking right until you need it.
+     ========================================================================== */
+  const FREE_MAIL=["gmail.com","googlemail.com","yahoo.com","yahoo.ca","hotmail.com","outlook.com",
+    "live.com","msn.com","icloud.com","me.com","aol.com","proton.me","protonmail.com","gmx.com","sasktel.net"];
+  const JUNK_LOCAL=/^(no-?reply|do-?not-?reply|donotreply|mailer-daemon|postmaster|bounce|notifications?|support|info|admin|hello|sales|team)$/i;
+  // sign-offs sit exactly where a name sits, so they have to be ruled out by name
+  const SIGN_OFFS=/^(best|best regards|regards|kind regards|warm regards|thanks|thank you|thanks again|cheers|sincerely|yours truly|all the best|talk soon|take care|many thanks|sent from my \w+)$/i;
+
+  function parseEmailText(t){
+    const found={email:"",first_name:"",last_name:"",company:"",phone:"",from:{}};
+    const why={};
+    t=String(t||"").replace(/ /g," ");
+
+    // 1. address — the anchor. "From: Name <a@b.com>" is the most trustworthy shape.
+    const fromLine=t.match(/^\s*From:\s*(.+)$/mi);
+    let addr="";
+    if(fromLine){
+      const m=fromLine[1].match(/<\s*([^<>\s]+@[^<>\s]+)\s*>/);
+      if(m)addr=m[1];
+      const disp=fromLine[1].replace(/<[^>]*>/,"").replace(/["']/g,"").trim();
+      if(disp&&disp.indexOf("@")<0&&disp.length<60){found.from.display=disp;}
+    }
+    if(!addr){
+      const all=(t.match(/[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}/g)||[])
+        .filter(a=>!JUNK_LOCAL.test(a.split("@")[0]));
+      if(all.length)addr=all[0];
+    }
+    if(addr){found.email=addr.toLowerCase();why.email=fromLine?"from the From: line":"the first address in the text";}
+
+    // 2. name — only from something that actually states it. Never invented.
+    if(found.from.display){
+      const parts=found.from.display.split(/\s+/).filter(Boolean);
+      if(parts.length===1){found.first_name=parts[0];why.name="the From: line";}
+      else if(parts.length<=4){found.first_name=parts[0];found.last_name=parts.slice(1).join(" ");why.name="the From: line";}
+    }
+    // 2b. no header? then the name is usually a plain line near the address in
+    // the signature block. Only accept something that really looks like a name.
+    if(!found.first_name&&found.email){
+      const lines=t.split(/\r?\n/).map(s=>s.trim());
+      const at=lines.findIndex(s=>s.toLowerCase().indexOf(found.email)>=0);
+      if(at>=0){
+        for(let k=Math.max(0,at-3);k<at;k++){
+          const s=lines[k];
+          if(!s||s.length>48)continue;
+          if(/[@\d]/.test(s))continue;
+          if(SIGN_OFFS.test(s))continue;
+          const w=s.replace(/[,.]+$/,"").split(/\s+/);
+          if(w.length<2||w.length>4)continue;
+          if(!w.every(x=>/^[A-Z][a-zA-Z'’\-]+$/.test(x)))continue;
+          found.first_name=w[0];found.last_name=w.slice(1).join(" ");why.name="the signature block";
+          break;
+        }
+      }
+    }
+    if(!found.first_name&&found.email){
+      // a local part like snowning or dan.castle is a fair read; anything with
+      // digits or gibberish is not, and stays blank
+      const lp=found.email.split("@")[0];
+      if(/^[a-z]+([._-][a-z]+)?$/i.test(lp)){
+        const bits=lp.split(/[._-]/).map(s=>s.charAt(0).toUpperCase()+s.slice(1));
+        found.first_name=bits[0];if(bits[1])found.last_name=bits[1];
+        why.name="guessed from the address — check it";
+      }
+    }
+
+    // 3. company — the domain, unless it's a personal mailbox
+    if(found.email){
+      const dom=found.email.split("@")[1]||"";
+      if(dom&&FREE_MAIL.indexOf(dom)<0){
+        const root=dom.replace(/^(www|mail|email)\./,"").split(".")[0];
+        if(root&&root.length>1){
+          found.company=root.charAt(0).toUpperCase()+root.slice(1);why.company="the email domain";
+          // if a line in the text spells that domain out properly, prefer it —
+          // "Rootless Living Magazine" beats "Rootlessliving"
+          const ls=t.split(/\r?\n/).map(s=>s.trim().replace(/[,.]+$/,""));
+          for(let k=0;k<ls.length;k++){
+            const s=ls[k];
+            if(!s||s.length>48||/[@]/.test(s))continue;
+            const squashed=s.replace(/[^a-z]/gi,"").toLowerCase();
+            if(squashed.indexOf(root.toLowerCase())===0&&squashed.length>=root.length){
+              found.company=s;why.company="spelled out in the signature";break;
+            }
+          }
+        }
+      }
+    }
+
+    // 4. phone — needs to look like a phone, not an order number or a date
+    const cands=t.match(/(?:\+?\d[\d\s().\-]{8,}\d)/g)||[];
+    for(let i=0;i<cands.length;i++){
+      const raw=cands[i], digits=raw.replace(/\D/g,"");
+      if(digits.length<10||digits.length>15)continue;
+      if(/^\d{4}-\d{2}-\d{2}/.test(raw.trim()))continue;   // a date
+      if(/(account|order|invoice|id|ref)\s*#?\s*$/i.test(t.slice(0,t.indexOf(raw)).slice(-14)))continue;
+      found.phone=raw.trim();why.phone="a number in the text that looks like a phone";break;
+    }
+    return {found:found,why:why};
+  }
+
+  function findByEmail(addr){
+    const a=String(addr||"").toLowerCase();
+    if(!a)return -1;
+    return data.findIndex(r=>String(r.email||"").toLowerCase()===a);
+  }
+
+  function openPaste(){
+    document.getElementById("pTitle").textContent="Paste an email";
+    document.getElementById("pBody").innerHTML=
+      '<div class="field"><label>Paste the email — all of it, or just the signature</label>'+
+      '<textarea id="pText" style="min-height:150px" placeholder="From: Snowning Li &lt;snowning@bluetti.com&gt;&#10;&#10;Hi Dan, thanks for your patience&hellip;"></textarea>'+
+      '<div class="hint">Nothing is sent anywhere. It only reads what you paste and fills in what it can prove.</div></div>';
+    const go=document.getElementById("pGo");
+    go.textContent="Read it";go.onclick=runPaste;
+    document.getElementById("ovPaste").classList.add("open");
+    setTimeout(()=>{const e=document.getElementById("pText");if(e)e.focus();},60);
+  }
+  function closePaste(){document.getElementById("ovPaste").classList.remove("open");}
+
+  function runPaste(){
+    const txt=(document.getElementById("pText")||{}).value||"";
+    if(!txt.trim()){alert("Paste something first.");return;}
+    const res=parseEmailText(txt), f=res.found, why=res.why;
+    if(!f.email){
+      document.getElementById("pBody").innerHTML=
+        '<div class="zempty"><b>No email address in there.</b>'+
+        'Without an address there’s nothing to match on. Paste the header too, or add them by hand.</div>';
+      const go=document.getElementById("pGo");go.textContent="Try again";go.onclick=openPaste;
+      return;
+    }
+    const idx=findByEmail(f.email);
+    if(idx>=0)showKnown(idx,f);else showNew(f,why);
+  }
+
+  // --- they're already in the book: this is a reply, not a new contact ---
+  function showKnown(idx,f){
+    const r=data[idx], its=itemsFor(r,idx);
+    const loop=loopUsable(r);
+    document.getElementById("pTitle").textContent="You already have "+displayName(r);
+    document.getElementById("pBody").innerHTML=
+      '<div class="dsec">That’s '+esc(displayName(r))+'</div>'+
+      '<div class="dfact"><span class="k">Email</span><span>'+esc(f.email)+'</span></div>'+
+      (r.last_contacted?'<div class="dfact"><span class="k">Last spoke</span><span>'+esc(fmtDate(r.last_contacted))+'</span></div>':'')+
+      (loop?'<div class="dfact"><span class="k">Outstanding</span><span>'+esc(loop)+'</span></div>':'')+
+      '<div class="hint" style="margin-top:10px">Heard back from them? Log it and the clock resets'+
+      (loop?', and the outstanding item closes off into their history.':'.')+'</div>'+
+      (its.length?'':'<div class="hint">Nothing is outstanding on them right now.</div>');
+    const go=document.getElementById("pGo");
+    go.textContent="Heard from them today";
+    go.onclick=function(){logHeardFrom(idx);};
+  }
+
+  function logHeardFrom(idx){
+    const r=data[idx], today=todayISO();
+    if(!Array.isArray(r.history))r.history=[];
+    const loop=loopPhrase(r);
+    r.history.unshift({d:today,n:(loop?("Heard back — "+loop):"Heard back from them")});
+    if(r.history.length>50)r.history.length=50;
+    r.last_contacted=today;
+    r.snooze_until="";
+    r.open_loop="";r.ball_is_with="";r.follow_up_on="";
+    save();closePaste();renderAll();
+  }
+
+  // --- nobody by that address: hand it to the Add form, already filled ---
+  function showNew(f,why){
+    document.getElementById("pTitle").textContent="Nobody here with that address";
+    const row=(k,v,note)=>'<div class="dfact"><span class="k">'+k+'</span><span>'+
+      (v?esc(v):'<span style="color:var(--soft)">not found — you’ll need to add this</span>')+
+      (v&&note?' <span style="color:var(--soft);font-size:11.5px">('+esc(note)+')</span>':'')+'</span></div>';
+    document.getElementById("pBody").innerHTML=
+      '<div class="dsec">Here’s what it could read</div>'+
+      row("First name",f.first_name,why.name)+
+      row("Last name",f.last_name,why.name)+
+      row("Company",f.company,why.company)+
+      row("Email",f.email,why.email)+
+      row("Phone",f.phone,why.phone)+
+      '<div class="hint" style="margin-top:10px">Anything blank, it wasn’t sure enough to fill in. '+
+      'Next screen is the normal Add form — nothing is saved until you press Save there.</div>';
+    const go=document.getElementById("pGo");
+    go.textContent="Fill in the form";
+    go.onclick=function(){
+      closePaste();
+      openEdit(null);
+      buildEditBody({bucket:"Business",first_name:f.first_name,last_name:f.last_name,
+                     company:f.company,email:f.email,phone:f.phone,channel:"Email"});
+    };
+  }
 
   /* ==========================================================================
      EMAIL (compose-URL only — nothing is ever sent without Dan pressing send)
