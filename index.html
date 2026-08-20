@@ -57,6 +57,26 @@
   .bcard .send{margin-top:10px;border:1px solid var(--line);background:#fff;border-radius:8px;
     padding:5px 10px;font-size:12px;cursor:pointer;font-weight:550;width:100%;}
   .bcard .send:hover{background:var(--accent-soft);border-color:#eaca8f;color:var(--accent-ink);}
+  /* ===== Open Loops ===== */
+  #lstrip{display:flex;gap:12px;overflow-x:auto;padding-bottom:4px;align-items:stretch;}
+  #lwrap{margin-top:4px;}
+  .lcard{flex:0 0 auto;min-width:230px;max-width:300px;background:var(--card);border:1px solid var(--line);
+    border-radius:var(--radius);padding:12px 14px;display:flex;flex-direction:column;}
+  .lcard.overdue{border-color:#d98b8b;background:linear-gradient(180deg,#fff7f7,#fff);}
+  .lcard .ln{font-weight:650;}
+  .lcard .lw{font-size:12.5px;margin-top:3px;font-weight:600;}
+  .lcard .lw.od{color:#b23c3c;} .lcard .lw.due{color:#a8791f;}
+  .lcard .ll{color:var(--muted);font-size:12.5px;margin-top:5px;line-height:1.35;}
+  .lcard .lball{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;margin-top:7px;
+    padding:2px 8px;border-radius:999px;width:fit-content;font-weight:600;}
+  .lcard .lball.them{background:#eaf3ff;color:#245c9e;}
+  .lcard .lball.me{background:#fdf0e3;color:#96591a;}
+  .lrow{display:flex;gap:6px;align-items:center;margin-top:10px;}
+  .lrow select{border:1px solid var(--line);border-radius:8px;padding:5px 6px;font:inherit;font-size:12px;background:#fff;}
+  .ldone{flex:1;border:1px solid var(--line);background:#fff;border-radius:8px;padding:6px 8px;
+    font:inherit;font-size:12px;cursor:pointer;font-weight:600;}
+  .ldone:hover{background:var(--accent-soft);border-color:#eaca8f;color:var(--accent-ink);}
+  .lclear{color:var(--muted);font-size:13px;padding:2px 0;}
 
   /* Contacts grid */
   #grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:14px;}
@@ -173,6 +193,11 @@
   <div id="bwrap" style="display:none;">
     <div class="sec-title">Upcoming birthdays — next 30 days</div>
     <div id="bstrip"></div>
+  </div>
+
+  <div id="lwrap">
+    <div class="sec-title">Open loops <span id="lcount"></span></div>
+    <div id="lstrip"></div>
   </div>
 
   <div class="sec-title">Contacts</div>
@@ -361,8 +386,11 @@
       const f=document.createElement("div");f.className="field";
       const lab=document.createElement("label");lab.textContent=pretty(c);f.appendChild(lab);
       let inp;
-      if(c==="notes"){inp=document.createElement("textarea");}
-      else{inp=document.createElement("input");inp.type="text";if(c==="birthday")inp.placeholder="YYYY-MM-DD";}
+      if(c==="notes"||c==="open_loop"){inp=document.createElement("textarea");if(c==="open_loop")inp.placeholder="What is actually outstanding?";}
+      else if(c==="ball_is_with"){inp=document.createElement("select");
+        [["","—"],["Them","Them (waiting on them)"],["Me","Me (my move)"]].forEach(([v,t])=>{const o=document.createElement("option");o.value=v;o.textContent=t;inp.appendChild(o);});}
+      else{inp=document.createElement("input");inp.type="text";
+        if(c==="birthday"||c==="last_contacted"||c==="follow_up_on")inp.placeholder="YYYY-MM-DD";}
       inp.value=row[c]||"";inp.dataset.col=c;f.appendChild(inp);body.appendChild(f);
     });
   }
@@ -431,7 +459,69 @@
   ["dragleave","drop"].forEach(ev=>dz.addEventListener(ev,e=>{e.preventDefault();e.stopPropagation();dz.classList.remove("hover");}));
   dz.addEventListener("drop",e=>{if(e.dataTransfer.files.length)handleFiles(e.dataTransfer.files);});
 
-  function renderAll(){renderAutoBar();renderBirthdays();renderContacts();renderFiles();if(rawShown)renderRaw();}
+  // ================= OPEN LOOPS =================
+  const LOOP_COLS=["last_contacted","follow_up_on","ball_is_with","open_loop"];
+  (function migrateLoopCols(){
+    let changed=false;
+    LOOP_COLS.forEach(c=>{if(!cols.includes(c)){cols.push(c);changed=true;}});
+    data.forEach(r=>{LOOP_COLS.forEach(c=>{if(r[c]===undefined){r[c]="";changed=true;}});});
+    if(changed)save();
+  })();
+
+  function todayISO(){const d=new Date();return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");}
+  function addDaysISO(days){const d=new Date();d.setDate(d.getDate()+days);return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");}
+  function daysUntil(iso){
+    if(!iso)return null;
+    const m=String(iso).trim().match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);if(!m)return null;
+    const t=new Date(+m[1],+m[2]-1,+m[3]);t.setHours(0,0,0,0);
+    const n=new Date();n.setHours(0,0,0,0);
+    return Math.round((t-n)/86400000);
+  }
+  function overdueWords(d){
+    if(d===0)return "Due today";
+    if(d===-1)return "1 day overdue";
+    if(d<0)return (-d)+" days overdue";
+    return "In "+d+" days";
+  }
+  function openLoops(){
+    const out=[];
+    data.forEach((r,i)=>{const d=daysUntil(r.follow_up_on);if(d!==null&&d<=0)out.push({r,i,d});});
+    out.sort((a,b)=>a.d-b.d);
+    return out;
+  }
+  function markContacted(i,days){
+    const r=data[i];
+    r.last_contacted=todayISO();
+    r.ball_is_with="Them";
+    r.follow_up_on=addDaysISO(days);
+    save();renderAll();
+  }
+  function renderLoops(){
+    const strip=document.getElementById("lstrip"),cnt=document.getElementById("lcount");
+    const list=openLoops();
+    cnt.textContent=list.length?"("+list.length+")":"";
+    strip.innerHTML="";
+    if(!list.length){strip.innerHTML='<div class="lclear">No open loops. Nothing is waiting on you.</div>';return;}
+    list.forEach(({r,i,d})=>{
+      const c=document.createElement("div");c.className="lcard"+(d<0?" overdue":"");
+      const ball=(r.ball_is_with||"").trim().toLowerCase();
+      const bcls=ball==="me"?"me":"them", btxt=ball==="me"?"Your move":"Waiting on them";
+      c.innerHTML='<div class="ln">'+esc(displayName(r))+'</div>'+
+        '<div class="lw '+(d<0?"od":"due")+'">'+overdueWords(d)+'</div>'+
+        (r.open_loop?'<div class="ll">'+esc(r.open_loop)+'</div>':'')+
+        '<div class="lball '+bcls+'">'+btxt+'</div>';
+      const row=document.createElement("div");row.className="lrow";
+      const sel=document.createElement("select");
+      [[3,"3 days"],[7,"1 week"],[14,"2 weeks"],[30,"1 month"]].forEach(([v,t])=>{
+        const o=document.createElement("option");o.value=v;o.textContent=t;if(v===7)o.selected=true;sel.appendChild(o);});
+      const b=document.createElement("button");b.className="ldone";b.textContent="I contacted them";
+      b.onclick=()=>markContacted(i,parseInt(sel.value,10));
+      row.appendChild(b);row.appendChild(sel);c.appendChild(row);
+      strip.appendChild(c);
+    });
+  }
+
+  function renderAll(){renderAutoBar();renderBirthdays();renderLoops();renderContacts();renderFiles();if(rawShown)renderRaw();}
 
   // ================= LOGIN GATE (Section 10) =================
   const ALLOWED_EMAIL="dancastle78@gmail.com";
