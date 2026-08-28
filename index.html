@@ -842,9 +842,10 @@
   /* ==========================================================================
      QUICK TO-DO
      ========================================================================== */
-  let loopIndex=null;
+  let loopIndex=null, loopAsked=false, loopLogSend=false;
   function openLoop(i){
-    loopIndex=i;const r=data[i];
+    loopIndex=i; loopAsked=false; loopLogSend=false;
+    const r=data[i];
     document.getElementById("lTitle").textContent="Something to do — "+displayName(r);
     document.getElementById("lBody").innerHTML=
       '<div class="field"><label>What&rsquo;s outstanding?</label>'+
@@ -857,11 +858,57 @@
       '<div class="field"><label>Nudge me on</label><input id="lWhen" type="date" value="'+esc(r.follow_up_on||addDaysISO(7))+'"></div>';
     document.getElementById("ovLoop").classList.add("open");
   }
+  /* 2026-08-28 — a pushed nudge date used to be able to stand in for "handled".
+     An email went out, the To-do date was moved forward, and the app removed the
+     contact from the list having written NOTHING: blank last-spoke, empty history,
+     ball still "Me", notes still reading "NOT SENT YET". A record that looks normal
+     and says the opposite of what happened is worse than no record. So it asks. */
   function saveLoop(){
     const r=data[loopIndex];
-    r.open_loop=document.getElementById("lText").value.trim();
-    r.ball_is_with=document.getElementById("lBall").value;
-    r.follow_up_on=normDate(document.getElementById("lWhen").value);
+    const text=document.getElementById("lText").value.trim();
+    const ball=document.getElementById("lBall").value;
+    const when=normDate(document.getElementById("lWhen").value);
+    if(!loopAsked && ball==="Me" && when && when>todayISO()){
+      loopAsked=true; askReachedOut(r); return;
+    }
+    commitLoop(r,text,ball,when);
+  }
+
+  function askReachedOut(r){
+    const box=document.createElement("div");
+    box.id="lAsk"; box.className="field";
+    box.style.cssText="border:1px solid var(--line);border-radius:8px;padding:10px;margin-top:4px";
+    box.innerHTML='<div><strong>Before that saves \u2014 did you already reach out?</strong></div>'+
+      '<div class="hint" style="margin-top:4px">You&rsquo;re pushing the nudge date forward while the ball is still yours, '+
+      'which usually means something just went out. Say yes and it goes into '+esc(displayName(r))+'&rsquo;s history. '+
+      'Say no and only the date changes.</div>'+
+      '<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">'+
+        '<button class="btn primary" onclick="loopAnswer(true)">Yes \u2014 log it today</button>'+
+        '<button class="btn" onclick="loopAnswer(false)">No \u2014 just the date</button>'+
+      '</div>';
+    document.getElementById("lBody").appendChild(box);
+    box.scrollIntoView({block:"nearest"});
+  }
+
+  function loopAnswer(yes){
+    loopLogSend=!!yes;
+    const a=document.getElementById("lAsk"); if(a)a.remove();
+    saveLoop();
+  }
+
+  function commitLoop(r,text,ball,when){
+    if(loopLogSend){
+      const today=todayISO();
+      if(!Array.isArray(r.history))r.history=[];
+      const how=chan(r).log;
+      r.history.unshift({d:today,n:(text?(how+" \u2014 "+text):how)});
+      if(r.history.length>50)r.history.length=50;
+      r.last_contacted=today;
+      ball="Them";
+    }
+    r.open_loop=text;
+    r.ball_is_with=ball;
+    r.follow_up_on=when;
     if(!r.last_contacted&&r.ball_is_with==="Them")r.last_contacted=todayISO();
     save();closeLoop();renderAll();
   }
