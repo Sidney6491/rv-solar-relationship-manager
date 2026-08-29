@@ -705,7 +705,33 @@
      RENDER — rolodex
      ========================================================================== */
   const LETTERS="ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
-  function sortKey(r){return displayName(r).toUpperCase();}
+
+  /* ---- Rolodex filing, added 2026-08-29 ----------------------------------
+     Dan's ask: he looks for "Roads Less Traveled", not "Emily". So the
+     rolodex list and the A-Z rail file a contact under the BUSINESS name and
+     show the person underneath. Nothing else changes: displayName() is still
+     the person everywhere else, so email drafts, dialogs and the delete
+     confirm all still say the human's name.
+
+     NAME_IS_THE_BUSINESS = rows where the contact already IS the company and
+     the company field holds a job description ("affiliate team", "via
+     Impact"). Swapping those would file EcoFlow under A for "affiliate".
+     Add a name here if another affiliate program gets added. Bluetti is
+     deliberately NOT here: it is Snowning at Bluetti, so it files under B. */
+  const NAME_IS_THE_BUSINESS=["ecoflow","jackery","renogy"];
+  function fileUnder(r){
+    const co=(r.company||"").trim();
+    if(!co)return displayName(r);
+    if(NAME_IS_THE_BUSINESS.indexOf(displayName(r).trim().toLowerCase())!==-1)return displayName(r);
+    return co;
+  }
+  function fileUnderSub(r){
+    const title=fileUnder(r), name=displayName(r);
+    const sub=(title===name)?(r.company||"").trim():name;
+    return (sub&&sub!==title)?sub:"";
+  }
+
+  function sortKey(r){return fileUnder(r).toUpperCase();}
   function letterOf(r){const c=sortKey(r)[0]||"#";return /[A-Z]/.test(c)?c:"#";}
 
   function matches(r){
@@ -746,8 +772,8 @@
     el.innerHTML=rows.map(o=>{
       const r=o.r, since=daysSince(r.last_contacted);
       return '<div class="row" data-i="'+o.i+'">'+avatar(r,"m")+
-        '<div><div class="rname">'+esc(displayName(r))+'</div>'+
-        (r.company?'<div class="rco">'+esc(r.company)+'</div>':'')+'</div>'+
+        '<div><div class="rname">'+esc(fileUnder(r))+'</div>'+
+        (fileUnderSub(r)?'<div class="rco">'+esc(fileUnderSub(r))+'</div>':'')+'</div>'+
         '<div class="rmeta"><span class="pill '+pillCls(r)+'">'+
           esc(groupWord(r))+'</span>'+
         '<div class="rwhen">'+(since===null?'not logged yet':('last spoke '+agoWords(since)))+'</div>'+
